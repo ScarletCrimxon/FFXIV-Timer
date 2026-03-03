@@ -10,13 +10,26 @@ const {
   PermissionsBitField
 } = require("discord.js");
 
-const puppeteer = require("puppeteer");
+const Parser = require("rss-parser");
+const rssParser = new Parser();
+
 const fs = require("fs");
+const express = require("express");
 
 // ================= CONFIG =================
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+
+if (!TOKEN) {
+  console.error("❌ TOKEN missing in environment variables.");
+  process.exit(1);
+}
+
+if (!CLIENT_ID) {
+  console.error("❌ CLIENT_ID missing in environment variables.");
+  process.exit(1);
+}
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
@@ -33,7 +46,7 @@ function saveData() {
   fs.writeFileSync("data.json", JSON.stringify(configs, null, 2));
 }
 
-// ================= RESET TIMERS =================
+// ================= RESET CALCULATIONS =================
 
 function getNextDailyReset() {
   const now = new Date();
@@ -54,66 +67,63 @@ function getNextWeeklyReset() {
   return Math.floor(reset.getTime() / 1000);
 }
 
-// ================= AUTO MAINTENANCE =================
+// ================= RSS MAINTENANCE =================
 
 let maintenanceWindow = null;
 let lastMaintenanceCheck = 0;
 
 async function autoDetectMaintenance() {
   try {
-    if (Date.now() - lastMaintenanceCheck < 1000 * 60 * 30) return;
-
+    if (Date.now() - lastMaintenanceCheck < 1000 * 60 * 15) return;
     lastMaintenanceCheck = Date.now();
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
-    });
+    console.log("Checking RSS for All Worlds maintenance...");
 
-    const page = await browser.newPage();
-
-    await page.goto(
-      "https://na.finalfantasyxiv.com/lodestone/news/category/2",
-      { waitUntil: "networkidle2" }
+    const feed = await rssParser.parseURL(
+      "https://na.finalfantasyxiv.com/lodestone/news/news.xml"
     );
 
-    await new Promise(r => setTimeout(r, 3000));
+    const item = feed.items.find(entry =>
+      entry.title.includes("[Maintenance]") &&
+      entry.title.includes("All Worlds")
+    );
 
-    const maintenanceLink = await page.evaluate(() => {
-      const links = Array.from(document.querySelectorAll("a"));
-      const match = links.find(link =>
-        link.innerText.includes("All Worlds Maintenance")
-      );
-      return match ? match.href : null;
-    });
-
-    if (!maintenanceLink) {
-      await browser.close();
+    if (!item) {
+      maintenanceWindow = null;
+      console.log("No All Worlds maintenance in RSS.");
       return;
     }
 
-    await page.goto(maintenanceLink, { waitUntil: "networkidle2" });
-    await new Promise(r => setTimeout(r, 3000));
+    const desc =
+      item.content ||
+      item["content:encoded"] ||
+      item.contentSnippet ||
+      item.description;
 
-    const text = await page.evaluate(() => document.body.innerText);
+    if (!desc) {
+      maintenanceWindow = null;
+      return;
+    }
 
-    await browser.close();
-
-    const match = text.match(
-      /([A-Za-z]+\.\s\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*to\s*([A-Za-z]+\.\s\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)/i
+    const match = desc.match(
+      /([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)[\s\S]*?([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)/i
     );
 
-    if (!match) return;
+    if (!match) {
+      maintenanceWindow = null;
+      console.log("Schedule not found in RSS description.");
+      return;
+    }
 
     const start = Math.floor(new Date(match[1] + " UTC").getTime() / 1000);
     const end = Math.floor(new Date(match[2] + " UTC").getTime() / 1000);
 
     maintenanceWindow = { start, end };
 
-    console.log("Maintenance auto-detected:", maintenanceWindow);
+    console.log("Maintenance detected:", maintenanceWindow);
 
   } catch (err) {
-    console.error("Maintenance detection failed:", err.message);
+    console.log("RSS maintenance check failed (non-critical).");
   }
 }
 
@@ -163,12 +173,12 @@ async function updateAllGuilds() {
       await message.edit({ embeds: [embed] });
 
     } catch (err) {
-      console.log("Failed updating guild:", guildId);
+      console.log("Update failed for guild:", guildId);
     }
   }
 }
 
-// ================= SLASH COMMANDS =================
+// ================= SLASH COMMAND =================
 
 const commands = [
   new SlashCommandBuilder()
@@ -184,24 +194,19 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-  try {
-    await rest.put(
-      Routes.applicationCommands(CLIENT_ID),
-      { body: commands }
-    );
-    console.log("Slash commands registered.");
-  } catch (error) {
-    console.error(error);
-  }
+  await rest.put(
+    Routes.applicationCommands(CLIENT_ID),
+    { body: commands }
+  );
+  console.log("Slash commands registered.");
 })();
 
-// ================= INTERACTION HANDLER =================
+// ================= INTERACTIONS =================
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === "setup") {
-
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "Admin only.", ephemeral: true });
     }
@@ -237,3 +242,16 @@ client.once("clientReady", () => {
 });
 
 client.login(TOKEN);
+
+// ================= EXPRESS HEALTH SERVER =================
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("FFXIV Timer Bot is running.");
+});
+
+app.listen(PORT, () => {
+  console.log(`Health server running on port ${PORT}`);
+});

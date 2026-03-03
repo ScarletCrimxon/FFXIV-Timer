@@ -194,11 +194,19 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-  await rest.put(
-    Routes.applicationCommands(CLIENT_ID),
-    { body: commands }
-  );
-  console.log("Slash commands registered.");
+  try {
+    console.log("Registering slash commands...");
+
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commands }
+    );
+
+    console.log("Slash commands registered.");
+  } catch (error) {
+    console.error("Slash command registration failed:");
+    console.error(error);
+  }
 })();
 
 // ================= INTERACTIONS =================

@@ -21,13 +21,11 @@ const express = require("express");
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-if (!TOKEN) {
-  console.error("❌ TOKEN missing in environment variables.");
-  process.exit(1);
-}
+console.log("TOKEN exists?", !!TOKEN);
+console.log("CLIENT_ID exists?", !!CLIENT_ID);
 
-if (!CLIENT_ID) {
-  console.error("❌ CLIENT_ID missing in environment variables.");
+if (!TOKEN || !CLIENT_ID) {
+  console.error("Missing TOKEN or CLIENT_ID in environment variables.");
   process.exit(1);
 }
 
@@ -77,7 +75,7 @@ async function autoDetectMaintenance() {
     if (Date.now() - lastMaintenanceCheck < 1000 * 60 * 15) return;
     lastMaintenanceCheck = Date.now();
 
-    console.log("Checking RSS for All Worlds maintenance...");
+    console.log("Checking RSS for maintenance...");
 
     const feed = await rssParser.parseURL(
       "https://na.finalfantasyxiv.com/lodestone/news/news.xml"
@@ -90,7 +88,6 @@ async function autoDetectMaintenance() {
 
     if (!item) {
       maintenanceWindow = null;
-      console.log("No All Worlds maintenance in RSS.");
       return;
     }
 
@@ -111,7 +108,6 @@ async function autoDetectMaintenance() {
 
     if (!match) {
       maintenanceWindow = null;
-      console.log("Schedule not found in RSS description.");
       return;
     }
 
@@ -119,11 +115,10 @@ async function autoDetectMaintenance() {
     const end = Math.floor(new Date(match[2] + " UTC").getTime() / 1000);
 
     maintenanceWindow = { start, end };
-
     console.log("Maintenance detected:", maintenanceWindow);
 
   } catch (err) {
-    console.log("RSS maintenance check failed (non-critical).");
+    console.error("RSS check failed:", err.message);
   }
 }
 
@@ -139,6 +134,7 @@ async function updateAllGuilds() {
     try {
       const { channelId, messageId } = configs[guildId];
       const channel = await client.channels.fetch(channelId);
+      const message = await channel.messages.fetch(messageId);
 
       let status = "🟢 **SERVERS ONLINE**";
       let color = 0x9b59b6;
@@ -169,14 +165,13 @@ async function updateAllGuilds() {
         )
         .setTimestamp();
 
-      const message = await channel.messages.fetch(messageId);
       await message.edit({ embeds: [embed] });
 
     } catch (err) {
-  console.log("Removing invalid guild config:", guildId);
-  delete configs[guildId];
-  saveData();
-}
+      console.log("Cleaning invalid guild config:", guildId);
+      delete configs[guildId];
+      saveData();
+    }
   }
 }
 
@@ -193,11 +188,9 @@ const commands = [
     )
 ];
 
-const rest = new REST({ version: "10" }).setToken(TOKEN);
-
-(async () => {
-  try {
+// Non-blocking registration
 console.log("Registering slash commands...");
+const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 rest.put(
   Routes.applicationCommands(CLIENT_ID),
@@ -205,8 +198,6 @@ rest.put(
 )
 .then(() => console.log("Slash commands registered."))
 .catch(err => console.error("Slash registration error:", err));
-  }
-})();
 
 // ================= INTERACTIONS =================
 
@@ -214,29 +205,41 @@ client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === "setup") {
+
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: "Admin only.", ephemeral: true });
     }
 
     const channel = interaction.options.getChannel("channel");
 
-    const message = await channel.send({
-      embeds: [new EmbedBuilder().setTitle("Initializing...")]
-    });
+    if (!channel.isTextBased()) {
+      return interaction.reply({
+        content: "Please select a text channel.",
+        ephemeral: true
+      });
+    }
 
-    configs[interaction.guildId] = {
-      channelId: channel.id,
-      messageId: message.id
-    };
+    await interaction.deferReply({ ephemeral: true });
 
-    saveData();
+    try {
+      const message = await channel.send({
+        embeds: [new EmbedBuilder().setTitle("Initializing...")]
+      });
 
-    await interaction.reply({
-      content: "Setup complete!",
-      ephemeral: true
-    });
+      configs[interaction.guildId] = {
+        channelId: channel.id,
+        messageId: message.id
+      };
 
-    updateAllGuilds();
+      saveData();
+
+      await interaction.editReply("✅ Setup complete!");
+      updateAllGuilds();
+
+    } catch (err) {
+      console.error("Setup error:", err);
+      await interaction.editReply("❌ Failed to setup. Check bot permissions.");
+    }
   }
 });
 
@@ -250,7 +253,7 @@ client.once("clientReady", () => {
 
 client.login(TOKEN);
 
-// ================= EXPRESS HEALTH SERVER =================
+// ================= EXPRESS =================
 
 const app = express();
 const PORT = process.env.PORT || 3000;

@@ -171,7 +171,7 @@ async function updateAllGuilds() {
   }
 }
 
-// ================= SLASH COMMAND DEFINITION =================
+// ================= SLASH COMMAND =================
 
 const commands = [
   new SlashCommandBuilder()
@@ -229,6 +229,14 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
+// ================= LOGIN FIRST =================
+
+console.log("Attempting Discord login...");
+
+client.login(TOKEN)
+  .then(() => console.log("Login promise resolved."))
+  .catch(err => console.error("Login failed:", err));
+
 // ================= READY EVENT =================
 
 client.once("clientReady", async () => {
@@ -250,19 +258,16 @@ client.once("clientReady", async () => {
 
   updateAllGuilds();
   setInterval(updateAllGuilds, 1000 * 60 * 5);
-});
 
-client.login(TOKEN);
+  // Start Express AFTER login
+  const app = express();
+  const PORT = process.env.PORT || 3000;
 
-// ================= EXPRESS HEALTH SERVER =================
+  app.get("/", (req, res) => {
+    res.send("FFXIV Timer Bot is running.");
+  });
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get("/", (req, res) => {
-  res.send("FFXIV Timer Bot is running.");
-});
-
-app.listen(PORT, () => {
-  console.log(`Health server running on port ${PORT}`);
+  app.listen(PORT, () => {
+    console.log(`Health server running on port ${PORT}`);
+  });
 });

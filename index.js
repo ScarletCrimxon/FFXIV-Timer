@@ -21,9 +21,6 @@ const express = require("express");
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-console.log("TOKEN exists?", !!TOKEN);
-console.log("CLIENT_ID exists?", !!CLIENT_ID);
-
 if (!TOKEN || !CLIENT_ID) {
   console.error("Missing TOKEN or CLIENT_ID in environment variables.");
   process.exit(1);
@@ -167,15 +164,14 @@ async function updateAllGuilds() {
 
       await message.edit({ embeds: [embed] });
 
-    } catch (err) {
-      console.log("Cleaning invalid guild config:", guildId);
+    } catch {
       delete configs[guildId];
       saveData();
     }
   }
 }
 
-// ================= SLASH COMMAND =================
+// ================= SLASH COMMAND DEFINITION =================
 
 const commands = [
   new SlashCommandBuilder()
@@ -186,18 +182,8 @@ const commands = [
         .setDescription("Channel to post panel in")
         .setRequired(true)
     )
+    .toJSON()
 ];
-
-// Non-blocking registration
-console.log("Registering slash commands...");
-const rest = new REST({ version: "10" }).setToken(TOKEN);
-
-rest.put(
-  Routes.applicationCommands(CLIENT_ID),
-  { body: commands }
-)
-.then(() => console.log("Slash commands registered."))
-.catch(err => console.error("Slash registration error:", err));
 
 // ================= INTERACTIONS =================
 
@@ -243,17 +229,32 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-// ================= READY =================
+// ================= READY EVENT =================
 
-client.once("clientReady", () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
+
+  try {
+    console.log("Registering slash commands...");
+    const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commands }
+    );
+
+    console.log("Slash commands registered.");
+  } catch (err) {
+    console.error("Slash registration error:", err);
+  }
+
   updateAllGuilds();
   setInterval(updateAllGuilds, 1000 * 60 * 5);
 });
 
 client.login(TOKEN);
 
-// ================= EXPRESS =================
+// ================= EXPRESS HEALTH SERVER =================
 
 const app = express();
 const PORT = process.env.PORT || 3000;

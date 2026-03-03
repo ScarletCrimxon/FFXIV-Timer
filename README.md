@@ -16,7 +16,7 @@ Live Final Fantasy XIV server status tracking for Discord.
 
 ## 🚀 Invite
 
-👉 https://scarletcrimxon.github.io/ffxiv-status-site/
+👉 [https://scarletcrimxon.github.io/ffxiv-status-site/](https://scarletcrimxon.github.io/FFXIV-Timer-Page/)
 
 ---
 

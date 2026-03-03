@@ -10,8 +10,7 @@ Live Final Fantasy XIV server status tracking for Discord.
 - 🗓 Weekly Reset timer (Tuesday 08:00 UTC)
 - 🌍 Multi-server support
 
-- <img width="420" height="418" alt="image" src="https://github.com/user-attachments/assets/a2bf8338-f6c6-4c4e-bea6-16e10546b2b0" />
-
+<img width="320" height="318" alt="image" src="https://github.com/user-attachments/assets/a2bf8338-f6c6-4c4e-bea6-16e10546b2b0" />
 
 ---
 

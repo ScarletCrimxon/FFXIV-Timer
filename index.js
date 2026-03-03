@@ -173,8 +173,10 @@ async function updateAllGuilds() {
       await message.edit({ embeds: [embed] });
 
     } catch (err) {
-      console.log("Update failed for guild:", guildId);
-    }
+  console.log("Removing invalid guild config:", guildId);
+  delete configs[guildId];
+  saveData();
+}
   }
 }
 

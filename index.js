@@ -12,11 +12,23 @@ const {
 
 const Parser = require("rss-parser");
 const rssParser = new Parser();
-
 const fs = require("fs");
 const express = require("express");
 
-// ================= CONFIG =================
+// ================== EXPRESS (START IMMEDIATELY) ==================
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("FFXIV Timer Bot is running.");
+});
+
+app.listen(PORT, () => {
+  console.log(`Health server running on port ${PORT}`);
+});
+
+// ================== DISCORD CONFIG ==================
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -30,7 +42,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// ================= DATA STORAGE =================
+// ================== DATA STORAGE ==================
 
 let configs = {};
 if (fs.existsSync("data.json")) {
@@ -41,7 +53,7 @@ function saveData() {
   fs.writeFileSync("data.json", JSON.stringify(configs, null, 2));
 }
 
-// ================= RESET CALCULATIONS =================
+// ================== RESET CALCULATIONS ==================
 
 function getNextDailyReset() {
   const now = new Date();
@@ -62,7 +74,7 @@ function getNextWeeklyReset() {
   return Math.floor(reset.getTime() / 1000);
 }
 
-// ================= RSS MAINTENANCE =================
+// ================== RSS MAINTENANCE ==================
 
 let maintenanceWindow = null;
 let lastMaintenanceCheck = 0;
@@ -71,8 +83,6 @@ async function autoDetectMaintenance() {
   try {
     if (Date.now() - lastMaintenanceCheck < 1000 * 60 * 15) return;
     lastMaintenanceCheck = Date.now();
-
-    console.log("Checking RSS for maintenance...");
 
     const feed = await rssParser.parseURL(
       "https://na.finalfantasyxiv.com/lodestone/news/news.xml"
@@ -94,32 +104,25 @@ async function autoDetectMaintenance() {
       item.contentSnippet ||
       item.description;
 
-    if (!desc) {
-      maintenanceWindow = null;
-      return;
-    }
+    if (!desc) return;
 
     const match = desc.match(
       /([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)[\s\S]*?([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)/i
     );
 
-    if (!match) {
-      maintenanceWindow = null;
-      return;
-    }
+    if (!match) return;
 
     const start = Math.floor(new Date(match[1] + " UTC").getTime() / 1000);
     const end = Math.floor(new Date(match[2] + " UTC").getTime() / 1000);
 
     maintenanceWindow = { start, end };
-    console.log("Maintenance detected:", maintenanceWindow);
 
   } catch (err) {
-    console.error("RSS check failed:", err.message);
+    console.error("RSS error:", err.message);
   }
 }
 
-// ================= EMBED UPDATE =================
+// ================== EMBED UPDATE ==================
 
 async function updateAllGuilds() {
   await autoDetectMaintenance();
@@ -171,7 +174,7 @@ async function updateAllGuilds() {
   }
 }
 
-// ================= SLASH COMMAND =================
+// ================== SLASH COMMAND ==================
 
 const commands = [
   new SlashCommandBuilder()
@@ -185,15 +188,13 @@ const commands = [
     .toJSON()
 ];
 
-// ================= INTERACTIONS =================
-
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === "setup") {
 
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return interaction.reply({ content: "Admin only.", ephemeral: true });
+      return interaction.reply({ content: "Admin only.", flags: 64 });
     }
 
     const channel = interaction.options.getChannel("channel");
@@ -201,11 +202,11 @@ client.on("interactionCreate", async interaction => {
     if (!channel.isTextBased()) {
       return interaction.reply({
         content: "Please select a text channel.",
-        ephemeral: true
+        flags: 64
       });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
 
     try {
       const message = await channel.send({
@@ -223,13 +224,13 @@ client.on("interactionCreate", async interaction => {
       updateAllGuilds();
 
     } catch (err) {
-      console.error("Setup error:", err);
-      await interaction.editReply("❌ Failed to setup. Check bot permissions.");
+      console.error(err);
+      await interaction.editReply("❌ Failed to setup. Check permissions.");
     }
   }
 });
 
-// ================= LOGIN FIRST =================
+// ================== LOGIN (NON-BLOCKING) ==================
 
 console.log("Attempting Discord login...");
 
@@ -237,20 +238,17 @@ client.login(TOKEN)
   .then(() => console.log("Login promise resolved."))
   .catch(err => console.error("Login failed:", err));
 
-// ================= READY EVENT =================
+// ================== READY ==================
 
 client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
   try {
-    console.log("Registering slash commands...");
     const rest = new REST({ version: "10" }).setToken(TOKEN);
-
     await rest.put(
       Routes.applicationCommands(CLIENT_ID),
       { body: commands }
     );
-
     console.log("Slash commands registered.");
   } catch (err) {
     console.error("Slash registration error:", err);
@@ -258,16 +256,4 @@ client.once("clientReady", async () => {
 
   updateAllGuilds();
   setInterval(updateAllGuilds, 1000 * 60 * 5);
-
-  // Start Express AFTER login
-  const app = express();
-  const PORT = process.env.PORT || 3000;
-
-  app.get("/", (req, res) => {
-    res.send("FFXIV Timer Bot is running.");
-  });
-
-  app.listen(PORT, () => {
-    console.log(`Health server running on port ${PORT}`);
-  });
 });

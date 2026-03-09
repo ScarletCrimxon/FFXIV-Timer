@@ -1,4 +1,3 @@
-
 require("dotenv").config();
 
 const {
@@ -16,11 +15,8 @@ const rssParser = new Parser();
 const fs = require("fs");
 const express = require("express");
 
-/*
-=========================================
-EXPRESS SERVER (for Render / uptime ping)
-=========================================
-*/
+// ================== EXPRESS (START IMMEDIATELY) ==================
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -32,11 +28,7 @@ app.listen(PORT, () => {
   console.log(`Health server running on port ${PORT}`);
 });
 
-/*
-=========================================
-DISCORD CONFIG
-=========================================
-*/
+// ================== DISCORD CONFIG ==================
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -50,11 +42,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-/*
-=========================================
-DATA STORAGE
-=========================================
-*/
+// ================== DATA STORAGE ==================
 
 let configs = {};
 if (fs.existsSync("data.json")) {
@@ -65,11 +53,7 @@ function saveData() {
   fs.writeFileSync("data.json", JSON.stringify(configs, null, 2));
 }
 
-/*
-=========================================
-RESET CALCULATIONS
-=========================================
-*/
+// ================== RESET CALCULATIONS ==================
 
 function getNextDailyReset() {
   const now = new Date();
@@ -90,58 +74,30 @@ function getNextWeeklyReset() {
   return Math.floor(reset.getTime() / 1000);
 }
 
-/*
-=========================================
-MAINTENANCE DETECTION (LODSTONE RSS)
-Source:
-https://na.finalfantasyxiv.com/lodestone/news/news.xml
-=========================================
-*/
+// ================== RSS MAINTENANCE ==================
 
 let maintenanceWindow = null;
 let lastMaintenanceCheck = 0;
 
-function normalizeDate(str, tz) {
-
-  let cleaned = str
-    .replace("a.m.", "AM")
-    .replace("p.m.", "PM")
-    .replace("Mar.", "Mar")
-    .replace("Apr.", "Apr")
-    .replace("Jun.", "Jun")
-    .replace("Jul.", "Jul")
-    .replace("Sep.", "Sep")
-    .replace("Oct.", "Oct")
-    .replace("Nov.", "Nov")
-    .replace("Dec.", "Dec");
-
-  if (tz === "PDT") cleaned += " GMT-7";
-  else if (tz === "PST") cleaned += " GMT-8";
-  else cleaned += " UTC";
-
-  return new Date(cleaned);
-}
-
 async function autoDetectMaintenance() {
-
   try {
 
     if (Date.now() - lastMaintenanceCheck < 1000 * 60 * 15) return;
     lastMaintenanceCheck = Date.now();
 
-    console.log("Checking Lodestone RSS for maintenance...");
+    console.log("Checking RSS for maintenance...");
 
     const feed = await rssParser.parseURL(
       "https://na.finalfantasyxiv.com/lodestone/news/news.xml"
     );
 
     const item = feed.items.find(entry =>
-      entry.categories?.includes("Maintenance") &&
-      entry.title.includes("All Worlds")
+      entry.title?.includes("All Worlds") &&
+      entry.title?.toLowerCase().includes("maintenance")
     );
 
     if (!item) {
-      console.log("No All Worlds maintenance found.");
+      console.log("No All Worlds maintenance in RSS.");
       maintenanceWindow = null;
       return;
     }
@@ -158,7 +114,7 @@ async function autoDetectMaintenance() {
     const clean = desc.replace(/<[^>]*>/g, "");
 
     const match = clean.match(
-      /([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2}\s(?:a\.m\.|p\.m\.))\s+to\s+([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2}\s(?:a\.m\.|p\.m\.))\s\((PDT|PST|UTC)\)/i
+      /([A-Za-z]+\.\s?\d{1,2},?\s?\d{0,4}\s\d{1,2}:\d{2}\s(?:a\.m\.|p\.m\.))\s+to\s+([A-Za-z]+\.\s?\d{1,2},?\s?\d{0,4}\s\d{1,2}:\d{2}\s(?:a\.m\.|p\.m\.))\s\((PDT|PST|UTC)\)/i
     );
 
     if (!match) {
@@ -166,41 +122,29 @@ async function autoDetectMaintenance() {
       return;
     }
 
-    const startDate = normalizeDate(match[1], match[3]);
-    const endDate = normalizeDate(match[2], match[3]);
-
-    const start = Math.floor(startDate.getTime() / 1000);
-    const end = Math.floor(endDate.getTime() / 1000);
+    const start = Math.floor(new Date(match[1] + " " + match[3]).getTime() / 1000);
+    const end = Math.floor(new Date(match[2] + " " + match[3]).getTime() / 1000);
 
     maintenanceWindow = { start, end };
 
     console.log("Maintenance detected:", maintenanceWindow);
 
   } catch (err) {
-    console.error("Maintenance detection failed:", err.message);
+    console.error("RSS error:", err.message);
   }
-
 }
 
-/*
-=========================================
-EMBED UPDATE
-=========================================
-*/
+// ================== EMBED UPDATE ==================
 
 async function updateAllGuilds() {
-
   await autoDetectMaintenance();
 
   const daily = getNextDailyReset();
   const weekly = getNextWeeklyReset();
 
   for (const guildId in configs) {
-
     try {
-
       const { channelId, messageId } = configs[guildId];
-
       const channel = await client.channels.fetch(channelId);
       const message = await channel.messages.fetch(messageId);
 
@@ -209,7 +153,6 @@ async function updateAllGuilds() {
       let maintenanceField = "No maintenance scheduled";
 
       if (maintenanceWindow) {
-
         const now = Math.floor(Date.now() / 1000);
 
         if (now >= maintenanceWindow.start && now <= maintenanceWindow.end) {
@@ -221,7 +164,6 @@ async function updateAllGuilds() {
 `> 🟣 Starts: <t:${maintenanceWindow.start}:F>
 > 🔚 Ends: <t:${maintenanceWindow.end}:F>
 > ⏳ <t:${maintenanceWindow.start}:R>`;
-
       }
 
       const embed = new EmbedBuilder()
@@ -241,15 +183,10 @@ async function updateAllGuilds() {
       delete configs[guildId];
       saveData();
     }
-
   }
 }
 
-/*
-=========================================
-SLASH COMMAND
-=========================================
-*/
+// ================== SLASH COMMAND ==================
 
 const commands = [
   new SlashCommandBuilder()
@@ -264,7 +201,6 @@ const commands = [
 ];
 
 client.on("interactionCreate", async interaction => {
-
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === "setup") {
@@ -285,7 +221,6 @@ client.on("interactionCreate", async interaction => {
     await interaction.deferReply({ flags: 64 });
 
     try {
-
       const message = await channel.send({
         embeds: [new EmbedBuilder().setTitle("Initializing...")]
       });
@@ -301,21 +236,13 @@ client.on("interactionCreate", async interaction => {
       updateAllGuilds();
 
     } catch (err) {
-
       console.error(err);
       await interaction.editReply("❌ Failed to setup. Check permissions.");
-
     }
-
   }
-
 });
 
-/*
-=========================================
-LOGIN
-=========================================
-*/
+// ================== LOGIN ==================
 
 console.log("Attempting Discord login...");
 
@@ -323,35 +250,22 @@ client.login(TOKEN)
   .then(() => console.log("Login promise resolved."))
   .catch(err => console.error("Login failed:", err));
 
-/*
-=========================================
-READY
-=========================================
-*/
+// ================== READY ==================
 
 client.once("clientReady", async () => {
-
   console.log(`Logged in as ${client.user.tag}`);
 
   try {
-
     const rest = new REST({ version: "10" }).setToken(TOKEN);
-
     await rest.put(
       Routes.applicationCommands(CLIENT_ID),
       { body: commands }
     );
-
     console.log("Slash commands registered.");
-
   } catch (err) {
-
     console.error("Slash registration error:", err);
-
   }
 
   updateAllGuilds();
-
   setInterval(updateAllGuilds, 1000 * 60 * 5);
-
 });

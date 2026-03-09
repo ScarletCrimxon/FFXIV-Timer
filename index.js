@@ -89,8 +89,8 @@ async function autoDetectMaintenance() {
     );
 
     const item = feed.items.find(entry =>
-      entry.title.includes("[Maintenance]") &&
-      entry.title.includes("All Worlds")
+      entry.title.toLowerCase().includes("maintenance") &&
+      entry.title.toLowerCase().includes("world")
     );
 
     if (!item) {
@@ -107,7 +107,7 @@ async function autoDetectMaintenance() {
     if (!desc) return;
 
     const match = desc.match(
-      /([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)[\s\S]*?([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)/i
+      /([A-Za-z]+\.*\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)[\s\S]*?([A-Za-z]+\.*\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)/i
     );
 
     if (!match) return;
@@ -116,6 +116,8 @@ async function autoDetectMaintenance() {
     const end = Math.floor(new Date(match[2] + " UTC").getTime() / 1000);
 
     maintenanceWindow = { start, end };
+
+    console.log("Maintenance detected:", maintenanceWindow);
 
   } catch (err) {
     console.error("RSS error:", err.message);

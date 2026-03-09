@@ -81,19 +81,23 @@ let lastMaintenanceCheck = 0;
 
 async function autoDetectMaintenance() {
   try {
+
     if (Date.now() - lastMaintenanceCheck < 1000 * 60 * 15) return;
     lastMaintenanceCheck = Date.now();
+
+    console.log("Checking RSS for maintenance...");
 
     const feed = await rssParser.parseURL(
       "https://na.finalfantasyxiv.com/lodestone/news/news.xml"
     );
 
     const item = feed.items.find(entry =>
-      entry.title.toLowerCase().includes("maintenance") &&
-      entry.title.toLowerCase().includes("world")
+      entry.categories?.includes("Maintenance") &&
+      entry.title.includes("All Worlds")
     );
 
     if (!item) {
+      console.log("No All Worlds maintenance in RSS.");
       maintenanceWindow = null;
       return;
     }
@@ -102,18 +106,24 @@ async function autoDetectMaintenance() {
       item.content ||
       item["content:encoded"] ||
       item.contentSnippet ||
+      item.summary ||
       item.description;
 
     if (!desc) return;
 
-    const match = desc.match(
-      /([A-Za-z]+\.*\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)[\s\S]*?([A-Za-z]+\.*\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2})\s*\(UTC\)/i
+    const clean = desc.replace(/<[^>]*>/g, "");
+
+    const match = clean.match(
+      /([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2}\s(?:a\.m\.|p\.m\.))\s+to\s+([A-Za-z]+\.\s?\d{1,2},\s\d{4}\s\d{1,2}:\d{2}\s(?:a\.m\.|p\.m\.))\s\((PDT|PST|UTC)\)/i
     );
 
-    if (!match) return;
+    if (!match) {
+      console.log("Maintenance found but parsing failed.");
+      return;
+    }
 
-    const start = Math.floor(new Date(match[1] + " UTC").getTime() / 1000);
-    const end = Math.floor(new Date(match[2] + " UTC").getTime() / 1000);
+    const start = Math.floor(new Date(match[1] + " " + match[3]).getTime() / 1000);
+    const end = Math.floor(new Date(match[2] + " " + match[3]).getTime() / 1000);
 
     maintenanceWindow = { start, end };
 
@@ -232,7 +242,7 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-// ================== LOGIN (NON-BLOCKING) ==================
+// ================== LOGIN ==================
 
 console.log("Attempting Discord login...");
 

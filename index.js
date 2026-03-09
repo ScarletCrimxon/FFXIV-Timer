@@ -77,6 +77,45 @@ function getNextWeeklyReset() {
 // ================== RSS MAINTENANCE ==================
 
 let maintenanceWindow = null;
+
+function normalizeDate(str, tz) {
+
+  const months = {
+    Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5,
+    Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11
+  };
+
+  const clean = str
+    .replace(",", "")
+    .replace("a.m.", "AM")
+    .replace("p.m.", "PM")
+    .replace("Mar.", "Mar")
+    .replace("Apr.", "Apr")
+    .replace("Jun.", "Jun")
+    .replace("Jul.", "Jul")
+    .replace("Sep.", "Sep")
+    .replace("Oct.", "Oct")
+    .replace("Nov.", "Nov")
+    .replace("Dec.", "Dec");
+
+  const parts = clean.split(" ");
+  const month = months[parts[0]];
+  const day = parseInt(parts[1]);
+  const year = parseInt(parts[2]);
+
+  let [hour, minute] = parts[3].split(":").map(Number);
+  const ampm = parts[4];
+
+  if (ampm === "PM" && hour !== 12) hour += 12;
+  if (ampm === "AM" && hour === 12) hour = 0;
+
+  let offset = 0;
+  if (tz === "PDT") offset = 7;
+  if (tz === "PST") offset = 8;
+
+  return new Date(Date.UTC(year, month, day, hour + offset, minute));
+}
+
 let lastMaintenanceCheck = 0;
 
 async function autoDetectMaintenance() {
@@ -122,8 +161,10 @@ async function autoDetectMaintenance() {
       return;
     }
 
-    const start = Math.floor(new Date(match[1] + " " + match[3]).getTime() / 1000);
-    const end = Math.floor(new Date(match[2] + " " + match[3]).getTime() / 1000);
+    const startDate = normalizeDate(match[1], match[3]);
+    const start = Math.floor(startDate.getTime() / 1000);
+    const endDate = normalizeDate(match[2], match[3]);
+    const end = Math.floor(endDate.getTime() / 1000);
 
     maintenanceWindow = { start, end };
 
